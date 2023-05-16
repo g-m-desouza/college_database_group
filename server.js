@@ -38,7 +38,46 @@ StudentAuthorized = 'Student'
 TeacherAuthorized = 'Teacher'
 AdminAuthorized = 'Admin'
 
+//--------Error handling middleware---------------------------------------------------------------
+//Error logging
+const errorlog = (err, req, res, next) => {
+  console.log( `error ${err.message}`) 
+  next(err) 
+};
+//Users accessing routes that are not defined
+const undefinedPathHandler= (req, res, next) => {
+  const err = new Error('Not Found');
+  res.status(404)
+  res.send('invalid path')
+  next(err)
+};
 
+  //Using default error handler
+const defaultErrorHandler = (err, req, res, next) => {
+  console.error(err.stack);
+
+  const status = err.status || 500;
+  const message = err.message || 'Internal server error';
+
+  res.status(status).json({
+    error: message
+  });
+};
+
+// Socket hang up error handling
+const socketHangUpHandler = (err, req, res, next) => {
+  if (err.code === 'ECONNRESET') {
+    console.error('Socket hang up');
+    res.status(400).json({
+      error: 'Socket hang up'
+    });
+  } else {
+    next(err);
+  }
+};
+//end of error handling middleware---------------------------------------------------------------
+
+//--------APIs-------------------------------------------------------------------------------------
 
 // API for student enrolling to course
 app.post('/enrol/:userid/:courseid/', function (request, response) {
@@ -196,6 +235,19 @@ app.post('/assignteacher/:userid/:courseid/:teacherid', function (request, respo
 
 //API for teachers to fail or pass a student.
 app.post('/mark/:userid/:courseid/:studentid/:markgiven', function (request, response) {
+  // try catch block to handle any errors that may occur
+  try {
+    //validation of input data (data type is correct and to handle any empty fields)
+    if (isNaN(request.params.userid) || isNaN(request.params.courseid) || isNaN(request.params.studentid) || !String(request.params.markgiven)) {
+      response.send('Invalid input. User ID, course ID, and student ID should be numbers.');
+  
+    return;}
+    if (!request.params.userid || !request.params.courseid || !request.params.studentid || !request.params.markgiven || request.params.userid.trim() === '' || request.params.courseid.trim() === '' || request.params.studentid.trim() === '' || request.params.markgiven.trim() === '') {
+      response.send('Invalid input. User ID, course ID, and student ID should be provided.');
+      return;
+    }
+    
+
    //Check if a user is authorized to perform an action
    // Call the Authorize procedure
    connection.query(`CALL Authorize(${+request.params.userid}, '${TeacherAuthorized}');`, (error, result) => {
@@ -212,6 +264,7 @@ app.post('/mark/:userid/:courseid/:studentid/:markgiven', function (request, res
                 console.log(error);
               }
             coursecheck_response = JSON.parse(JSON.stringify(result[0]))[0].Response;
+    
             if (coursecheck_response !== 'OK') {
                 response.send(coursecheck_response);
             }
@@ -226,10 +279,18 @@ app.post('/mark/:userid/:courseid/:studentid/:markgiven', function (request, res
                   });
             }
 
-    });
-   }
-  });
+        });
+      }
+   });
+  } catch (error) {
+    console.log(error);
+    response.send('Contact the system administrator.');
+  }
 });
+//end of APIs-------------------------------------------------------------------------------------
 
-
- 
+ //Error handling middleware
+app.use(errorlog);
+app.use(undefinedPathHandler);
+app.use(defaultErrorHandler);
+app.use(socketHangUpHandler);
